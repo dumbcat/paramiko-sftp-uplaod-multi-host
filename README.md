@@ -11,7 +11,7 @@
 ## 遠端主機設定部分:
 
     [REMOTE]
-    ipaddress = 192.168.1.187
+    ipaddress = 192.168.1.187, 192.168.1.188, 192.168.1.189
     port = 22
     username = moxa
     password = moxa
@@ -20,7 +20,7 @@
     filesmod = 493 
 
 **ipaddress**
-遠端主機IP位址
+遠端主機IP位址，如有多台主機可用「,」分隔
 **port**
 遠端主機SSH埠口
 **username**
