@@ -63,7 +63,7 @@ def ssh_chmod(host, port, username, password, remote_file, userid, usergroup):
         print()
 
     except Exception as e:
-        print('\033[91m<<< CHMOD EXCEPTION!! >>>\033[0m', e)
+        print('\033[91m<<< SSH EXEC COMMAND EXCEPTION!! >>>\033[0m', e)
 
     ssh.close()
 
@@ -79,6 +79,8 @@ def sftp_upload(*args):
     @ param local_file: <str> Local host upload file path.
     @ param remote_file: <str> Remote host upload file path.
     @ param filesmod: <int> The permission of upload files.
+    @ param userid: <str> The file user to be changed.
+    @ param usergroup: <str> The file group to be changed.
     '''
     paramiko.util.log_to_file('samba_sftp.log')
     host, port, username, password, local_file, remote_file, filesmod, userid, usergroup = args
