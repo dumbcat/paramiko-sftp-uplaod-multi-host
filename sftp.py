@@ -7,7 +7,7 @@ import configparser
 import datetime
 
 
-def ssh_chmod(host, port, username, password, remote, dirpathmod):
+def ssh_chmod(host, port, username, password, remote_dir, dirpathmod, sudo_password):
     '''
     Change the permission of remote host's upload folder.
 
@@ -23,9 +23,10 @@ def ssh_chmod(host, port, username, password, remote, dirpathmod):
     ssh = paramiko.SSHClient()
     # Allow connections to hosts that are not in the know_hosts.
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(hostname=host, port=port, username=username, password=password)
-
     try:
+        ssh.connect(hostname=host, port=port,
+                    username=username, password=password)
+        print('\033[32m<<< Connected to %s >>>\033[0m' % host)
         '''
         The -S flag tells sudu to expect the password to come from stdin
         The -p '' flag tells sudo to use '' or the empty string as the prompt
@@ -34,19 +35,19 @@ def ssh_chmod(host, port, username, password, remote, dirpathmod):
         So use %o to transform decimal to octal.
         '''
         stdin, stdout, stderr = ssh.exec_command(
-            "sudo -S -p '' chmod %o %s" % (dirpathmod, remote))
+            "sudo -S -p '' chmod %o %s" % (dirpathmod, remote_dir))
         # Enter the sudo password
-        stdin.write(password + '\n')
+        stdin.write(sudo_password + '\n')
         stdin.flush()
-        print('\033[32m[ The %s permission of %s is changed to %o. ]\033[0m' %
-              (host, remote, dirpathmod))
     except Exception as e:
-        print('\033[91m<<< CHMOD EXCEPTION!! >>>\033[0m', e)
-
+        print('\033[91m<<< CONNECT %s EXCEPTION!! >>>\033[0m %s ' % (host, e))
+        print()
+        return host
     ssh.close()
+    return 1
 
 
-def sftp_upload(host, port, username, password, local, remote, filesmod):
+def sftp_upload(host, port, username, password, local_dir, remote_dir, filesmod):
     '''
     Upload local host's file and folder to remote host by sftp
 
@@ -77,7 +78,7 @@ def sftp_upload(host, port, username, password, local, remote, filesmod):
         print('\033[44m === UPLOAD FILE TO %s START AT %s === \033[0m' %
               (host, datetime.datetime.now().strftime('%H:%M:%S')))
 
-        for root, dirs, files in os.walk(local):
+        for root, dirs, files in os.walk(local_dir):
             '''
             os.walk will generate the file names in a directory tree by walking
             the tree. For each directory in the tree rooted at directory top
@@ -112,14 +113,14 @@ def sftp_upload(host, port, username, password, local, remote, filesmod):
                 Delete the string of local(param) in the file path(local_file).
                 ex: if local is /root/, /root/home/note.txt => home/note.txt
                 '''
-                local_file = local_file_path.replace(local, '')
+                local_file = local_file_path.replace(local_dir, '')
 
                 '''
                 Combine the remote host path(remote) with local_file become
                 remote file path.
                 ex: /html/ + home/note.txt => /www/home/note.txt
                 '''
-                remote_file = os.path.join(remote, local_file)
+                remote_file = os.path.join(remote_dir, local_file)
 
                 try:
                     sftp.put(local_file_path, remote_file)
@@ -143,8 +144,8 @@ def sftp_upload(host, port, username, password, local, remote, filesmod):
                 empty folder at the remote. This loop will do this.
                 '''
                 local_path = os.path.join(root, name)
-                a = local_path.replace(local, '')
-                remote_path = os.path.join(remote, a)
+                a = local_path.replace(local_dir, '')
+                remote_path = os.path.join(remote_dir, a)
                 try:
                     sftp.mkdir(remote_path)
                     print("mkdir path %s" % remote_path)
@@ -156,11 +157,13 @@ def sftp_upload(host, port, username, password, local, remote, filesmod):
               (host, datetime.datetime.now().strftime('%H:%M:%S')))
         print()
         t.close()
+        return 1
 
     except Exception as e:
         print()
-        print('\033[91m<<< UPLOAD EXCEPTION!! >>>\033[0m', e)
+        print('\033[91m<<< UPLOAD %s EXCEPTION!! >>>\033[0m %s' % (host, e))
         print()
+        return host
 
 
 def print_info(msg):
@@ -179,10 +182,11 @@ if __name__ == '__main__':
         port = int(config.get('REMOTE', 'port'))
         username = config.get('REMOTE', 'username')
         password = config.get('REMOTE', 'password')
-        local = config.get('LOCAL', 'dirpath')
-        remote = config.get('REMOTE', 'dirpath')
+        local_dir = config.get('LOCAL', 'dirpath')
+        remote_dir = config.get('REMOTE', 'dirpath')
         dirpathmod = int(config.get('REMOTE', 'dirpathmod'))
         filesmod = int(config.get('REMOTE', 'filesmod'))
+        sudo_password = config.get('REMOTE', 'sudo_password')
     except Exception as e:
         print('\033[91m<<< Read configuration FAIL! >>>\033[0m', e)
     print()
@@ -194,13 +198,31 @@ if __name__ == '__main__':
     print('Read username from INI file:', username)
     print('Read password from INI file:', password)
     verify = input('Do you want to start uploading files? (YES/no)')
+
     if verify == 'no':
         print_info('Byebye!')
     else:
         print()
         print_info('START UPLOAD OPERATION.')
+        conn_err = [] # connect fail host list
+        upload_err = [] # upload fail host list
         for address in address_list:
-            ssh_chmod(address, port, username, password, remote, dirpathmod)
-            sftp_upload(address, port, username,
-                        password, local, remote, filesmod)
+            conn_res = ssh_chmod(address, port, username, password,
+                                 remote_dir, dirpathmod, sudo_password)
+            if conn_res == 1:
+                upload_res = sftp_upload(address, port, username, password,
+                                         local_dir, remote_dir, filesmod)
+                if upload_res != 1:
+                    upload_err.append(upload_res)
+            else:
+                conn_err.append(conn_res)
         print_info('ALL UPLOAD SUCCESS.')
+        print()
+
+        if len(conn_err) != 0:
+            print('\033[91m<<< CONNECT FAIL HOST LIST >>>\033[0m')
+            print(conn_err)
+            print()
+        if len(upload_err) != 0:
+            print('\033[91m<<< UPLOAD FAIL HOST LIST >>>\033[0m')
+            print(upload_err)
